@@ -238,14 +238,6 @@
     <div class="container">
         <h1>Stone Data Capture</h1>
         
-        <div class="config-section">
-            <div class="config-title">Configuration</div>
-            <div class="form-group">
-                <label for="letterRange">Available Letters (A-L default):</label>
-                <input type="text" id="letterRange" value="ABCDEFGHIJKL" placeholder="Enter available letters">
-                <button onclick="updateLetterButtons()" style="margin-top: 5px; font-size: 14px; padding: 8px;">Update Letters</button>
-            </div>
-        </div>
         
         <div class="camera-section">
             <video id="video" autoplay playsinline></video>
@@ -260,13 +252,19 @@
         
         <div class="form-section">
             <div class="form-group">
-                <label for="batchNumber">Batch Number (1-2 digits):</label>
-                <input type="number" id="batchNumber" min="1" max="99" placeholder="Enter batch number">
+                <label>Batch Number:</label>
+                <div class="position-buttons" id="batchButtons">
+                    <!-- Batch buttons will be generated here -->
+                </div>
+                <input type="hidden" id="selectedBatch">
             </div>
             
             <div class="form-group">
-                <label for="boardNumber">Board Number (1-2 digits):</label>
-                <input type="number" id="boardNumber" min="1" max="99" placeholder="Enter board number">
+                <label>Board Number:</label>
+                <div class="position-buttons" id="boardButtons">
+                    <!-- Board buttons will be generated here -->
+                </div>
+                <input type="hidden" id="selectedBoard">
             </div>
             
             <div class="form-group">
@@ -302,6 +300,29 @@
         <div class="export-section">
             <button onclick="exportCSV()">Export CSV</button>
         </div>
+        
+        <div class="config-section">
+            <div class="config-title">Configuration</div>
+            <div class="form-group">
+                <button id="accessCameraBtn" onclick="requestCameraAccess()" style="margin-bottom: 10px; font-size: 14px; padding: 8px;">Access Camera</button>
+                <button id="takeNewPhotoBtn" onclick="takeNewPhoto()" style="margin-bottom: 10px; font-size: 14px; padding: 8px; margin-left: 10px;" disabled>Take New Photo</button>
+            </div>
+            <div class="form-group">
+                <label for="letterRange">Available Letters (A-L default):</label>
+                <input type="text" id="letterRange" value="ABCDEFGHIJKL" placeholder="Enter available letters">
+                <button onclick="updateLetterButtons()" style="margin-top: 5px; font-size: 14px; padding: 8px;">Update Letters</button>
+            </div>
+            <div class="form-group">
+                <label for="batchRange">Available Batch Numbers (1-12 default):</label>
+                <input type="text" id="batchRange" value="1,2,3,4,5,6,7,8,9,10,11,12" placeholder="Enter available batch numbers">
+                <button onclick="updateBatchButtons()" style="margin-top: 5px; font-size: 14px; padding: 8px;">Update Batch Numbers</button>
+            </div>
+            <div class="form-group">
+                <label for="boardRange">Available Board Numbers (1-12 default):</label>
+                <input type="text" id="boardRange" value="1,2,3,4,5,6,7,8,9,10,11,12" placeholder="Enter available board numbers">
+                <button onclick="updateBoardButtons()" style="margin-top: 5px; font-size: 14px; padding: 8px;">Update Board Numbers</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -310,6 +331,11 @@
         let currentTestResult = '';
         let selectedPosition = '';
         let availableLetters = 'ABCDEFGHIJKL';
+        let availableBatches = '1,2,3,4,5,6,7,8,9,10,11,12';
+        let availableBoards = '1,2,3,4,5,6,7,8,9,10,11,12';
+        let selectedBatch = '';
+        let selectedBoard = '';
+        let cameraAccessGranted = false;
         
         const video = document.getElementById('video');
         const capturedImage = document.getElementById('capturedImage');
@@ -320,9 +346,11 @@
         const resultsList = document.getElementById('resultsList');
         const ocrProgress = document.getElementById('ocrProgress');
         
-        // Initialize letter buttons on page load
+        // Initialize buttons on page load
         document.addEventListener('DOMContentLoaded', function() {
             updateLetterButtons();
+            updateBatchButtons();
+            updateBoardButtons();
         });
         
         startCameraBtn.addEventListener('click', startCamera);
@@ -330,6 +358,11 @@
         retakeBtn.addEventListener('click', retakePhoto);
         
         async function startCamera() {
+            if (!cameraAccessGranted) {
+                showStatus('Please grant camera access first using the button in Configuration', 'error');
+                return;
+            }
+            
             try {
                 const constraints = {
                     video: {
@@ -464,10 +497,16 @@
                 
                 // Fill form fields
                 if (batchText) {
-                    document.getElementById('batchNumber').value = batchText;
+                    const batchNumbers = availableBatches.split(',').map(num => num.trim());
+                    if (batchNumbers.includes(batchText)) {
+                        selectBatch(batchText);
+                    }
                 }
                 if (boardText) {
-                    document.getElementById('boardNumber').value = boardText;
+                    const boardNumbers = availableBoards.split(',').map(num => num.trim());
+                    if (boardNumbers.includes(boardText)) {
+                        selectBoard(boardText);
+                    }
                 }
                 if (positionText && availableLetters.includes(positionText)) {
                     selectPosition(positionText);
@@ -544,9 +583,79 @@
             }
         }
         
+        function updateBatchButtons() {
+            const batchInput = document.getElementById('batchRange').value;
+            availableBatches = batchInput;
+            
+            const container = document.getElementById('batchButtons');
+            container.innerHTML = '';
+            
+            // Parse numbers from comma-separated input
+            const numbers = batchInput.split(',').map(num => num.trim()).filter(num => /^\d+$/.test(num));
+            
+            for (let num of numbers) {
+                const btn = document.createElement('button');
+                btn.className = 'position-btn';
+                btn.textContent = num;
+                btn.setAttribute('data-batch', num);
+                btn.onclick = () => selectBatch(num);
+                container.appendChild(btn);
+            }
+        }
+        
+        function updateBoardButtons() {
+            const boardInput = document.getElementById('boardRange').value;
+            availableBoards = boardInput;
+            
+            const container = document.getElementById('boardButtons');
+            container.innerHTML = '';
+            
+            // Parse numbers from comma-separated input
+            const numbers = boardInput.split(',').map(num => num.trim()).filter(num => /^\d+$/.test(num));
+            
+            for (let num of numbers) {
+                const btn = document.createElement('button');
+                btn.className = 'position-btn';
+                btn.textContent = num;
+                btn.setAttribute('data-board', num);
+                btn.onclick = () => selectBoard(num);
+                container.appendChild(btn);
+            }
+        }
+        
+        function selectBatch(number) {
+            // Clear previous selection
+            document.querySelectorAll('#batchButtons .position-btn').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            
+            // Select new batch
+            const btn = document.querySelector(`[data-batch="${number}"]`);
+            if (btn) {
+                btn.classList.add('selected');
+                selectedBatch = number;
+                document.getElementById('selectedBatch').value = number;
+            }
+        }
+        
+        function selectBoard(number) {
+            // Clear previous selection
+            document.querySelectorAll('#boardButtons .position-btn').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            
+            // Select new board
+            const btn = document.querySelector(`[data-board="${number}"]`);
+            if (btn) {
+                btn.classList.add('selected');
+                selectedBoard = number;
+                document.getElementById('selectedBoard').value = number;
+            }
+        }
+        
         function addEntry() {
-            const batch = document.getElementById('batchNumber').value;
-            const board = document.getElementById('boardNumber').value;
+            const batch = selectedBatch;
+            const board = selectedBoard;
             const position = selectedPosition;
             const testResult = currentTestResult;
             
@@ -598,13 +707,13 @@
         }
         
         function clearForm() {
-            document.getElementById('batchNumber').value = '';
-            document.getElementById('boardNumber').value = '';
             document.getElementById('testResult').value = '';
             currentTestResult = '';
             selectedPosition = '';
+            selectedBatch = '';
+            selectedBoard = '';
             
-            // Clear position button selection
+            // Clear all button selections
             document.querySelectorAll('.position-btn').forEach(btn => {
                 btn.classList.remove('selected');
             });
@@ -657,6 +766,52 @@
             }, 3000);
         }
         
+        async function requestCameraAccess() {
+            if (cameraAccessGranted) {
+                showStatus('Camera access already granted', 'success');
+                return;
+            }
+            
+            try {
+                const constraints = {
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                };
+                
+                const testStream = await navigator.mediaDevices.getUserMedia(constraints);
+                testStream.getTracks().forEach(track => track.stop());
+                
+                cameraAccessGranted = true;
+                document.getElementById('accessCameraBtn').disabled = true;
+                document.getElementById('takeNewPhotoBtn').disabled = false;
+                document.getElementById('startCamera').disabled = false;
+                
+                showStatus('Camera access granted successfully', 'success');
+            } catch (error) {
+                console.error('Error requesting camera access:', error);
+                showStatus('Error requesting camera access: ' + error.message, 'error');
+            }
+        }
+        
+        function takeNewPhoto() {
+            if (!cameraAccessGranted) {
+                showStatus('Please grant camera access first', 'error');
+                return;
+            }
+            
+            // Reset camera state
+            capturedImage.style.display = 'none';
+            video.style.display = 'block';
+            retakeBtn.style.display = 'none';
+            captureBtn.style.display = 'block';
+            
+            clearForm();
+            startCamera();
+        }
+
         window.addEventListener('beforeunload', () => {
             stopCamera();
         });
