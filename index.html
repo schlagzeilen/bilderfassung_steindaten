@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stone Data Capture</title>
+    <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -177,11 +178,74 @@
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
+        
+        .config-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .config-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #495057;
+        }
+        
+        .position-buttons {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 8px;
+            margin-top: 10px;
+        }
+        
+        .position-btn {
+            padding: 12px;
+            border: 2px solid #007bff;
+            background: white;
+            color: #007bff;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .position-btn:hover {
+            background: #007bff;
+            color: white;
+        }
+        
+        .position-btn.selected {
+            background: #007bff;
+            color: white;
+        }
+        
+        .ocr-progress {
+            margin: 10px 0;
+            padding: 10px;
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 5px;
+            color: #856404;
+            text-align: center;
+            display: none;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Stone Data Capture</h1>
+        
+        <div class="config-section">
+            <div class="config-title">Configuration</div>
+            <div class="form-group">
+                <label for="letterRange">Available Letters (A-L default):</label>
+                <input type="text" id="letterRange" value="ABCDEFGHIJKL" placeholder="Enter available letters">
+                <button onclick="updateLetterButtons()" style="margin-top: 5px; font-size: 14px; padding: 8px;">Update Letters</button>
+            </div>
+        </div>
         
         <div class="camera-section">
             <video id="video" autoplay playsinline></video>
@@ -206,16 +270,11 @@
             </div>
             
             <div class="form-group">
-                <label for="position">Position (A-F):</label>
-                <select id="position">
-                    <option value="">Select position</option>
-                    <option value="A">A</option>
-                    <option value="B">B</option>
-                    <option value="C">C</option>
-                    <option value="D">D</option>
-                    <option value="E">E</option>
-                    <option value="F">F</option>
-                </select>
+                <label>Position:</label>
+                <div class="position-buttons" id="positionButtons">
+                    <!-- Letter buttons will be generated here -->
+                </div>
+                <input type="hidden" id="selectedPosition">
             </div>
             
             <div class="form-group">
@@ -225,6 +284,10 @@
                     <button type="button" class="test-fail" onclick="setTestResult('FAIL')">FAIL</button>
                 </div>
                 <input type="text" id="testResult" readonly placeholder="Select test result">
+            </div>
+            
+            <div class="ocr-progress" id="ocrProgress">
+                Analyzing image with OCR...
             </div>
             
             <button onclick="addEntry()">Add Entry</button>
@@ -245,6 +308,8 @@
         let stream = null;
         let entries = [];
         let currentTestResult = '';
+        let selectedPosition = '';
+        let availableLetters = 'ABCDEFGHIJKL';
         
         const video = document.getElementById('video');
         const capturedImage = document.getElementById('capturedImage');
@@ -253,6 +318,12 @@
         const retakeBtn = document.getElementById('retakeBtn');
         const statusDiv = document.getElementById('status');
         const resultsList = document.getElementById('resultsList');
+        const ocrProgress = document.getElementById('ocrProgress');
+        
+        // Initialize letter buttons on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            updateLetterButtons();
+        });
         
         startCameraBtn.addEventListener('click', startCamera);
         captureBtn.addEventListener('click', captureImage);
@@ -325,8 +396,113 @@
             captureBtn.disabled = true;
         }
         
-        function analyzeImage(imageDataUrl) {
-            showStatus('Note: Manual entry required - automatic text recognition not implemented', 'error');
+        async function analyzeImage(imageDataUrl) {
+            try {
+                ocrProgress.style.display = 'block';
+                showStatus('Analyzing image with OCR...', 'success');
+                
+                // Convert data URL to image element
+                const img = new Image();
+                img.src = imageDataUrl;
+                
+                await new Promise(resolve => {
+                    img.onload = resolve;
+                });
+                
+                // Create canvas for image processing
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0);
+                
+                // Define regions based on your block layout
+                // Left side: batch (top) and board (bottom)
+                // Right side: position letter
+                const leftWidth = Math.floor(img.width * 0.6);
+                const rightStart = Math.floor(img.width * 0.6);
+                const midHeight = Math.floor(img.height * 0.5);
+                
+                // Extract batch number (top-left)
+                const batchCanvas = document.createElement('canvas');
+                const batchCtx = batchCanvas.getContext('2d');
+                batchCanvas.width = leftWidth;
+                batchCanvas.height = midHeight;
+                batchCtx.drawImage(img, 0, 0, leftWidth, midHeight, 0, 0, leftWidth, midHeight);
+                
+                // Extract board number (bottom-left)
+                const boardCanvas = document.createElement('canvas');
+                const boardCtx = boardCanvas.getContext('2d');
+                boardCanvas.width = leftWidth;
+                boardCanvas.height = img.height - midHeight;
+                boardCtx.drawImage(img, 0, midHeight, leftWidth, img.height - midHeight, 0, 0, leftWidth, img.height - midHeight);
+                
+                // Extract position letter (right side)
+                const positionCanvas = document.createElement('canvas');
+                const positionCtx = positionCanvas.getContext('2d');
+                positionCanvas.width = img.width - rightStart;
+                positionCanvas.height = img.height;
+                positionCtx.drawImage(img, rightStart, 0, img.width - rightStart, img.height, 0, 0, img.width - rightStart, img.height);
+                
+                // Run OCR on each region
+                const [batchResult, boardResult, positionResult] = await Promise.all([
+                    Tesseract.recognize(batchCanvas, 'eng', {
+                        logger: m => console.log(m)
+                    }),
+                    Tesseract.recognize(boardCanvas, 'eng', {
+                        logger: m => console.log(m)
+                    }),
+                    Tesseract.recognize(positionCanvas, 'eng', {
+                        logger: m => console.log(m)
+                    })
+                ]);
+                
+                // Extract and clean results
+                const batchText = extractNumbers(batchResult.data.text);
+                const boardText = extractNumbers(boardResult.data.text);
+                const positionText = extractLetters(positionResult.data.text);
+                
+                // Fill form fields
+                if (batchText) {
+                    document.getElementById('batchNumber').value = batchText;
+                }
+                if (boardText) {
+                    document.getElementById('boardNumber').value = boardText;
+                }
+                if (positionText && availableLetters.includes(positionText)) {
+                    selectPosition(positionText);
+                }
+                
+                ocrProgress.style.display = 'none';
+                
+                const detectedItems = [];
+                if (batchText) detectedItems.push(`Batch: ${batchText}`);
+                if (boardText) detectedItems.push(`Board: ${boardText}`);
+                if (positionText) detectedItems.push(`Position: ${positionText}`);
+                
+                if (detectedItems.length > 0) {
+                    showStatus(`OCR detected: ${detectedItems.join(', ')}. Please verify and correct if needed.`, 'success');
+                } else {
+                    showStatus('OCR could not detect text clearly. Please enter manually.', 'error');
+                }
+                
+            } catch (error) {
+                console.error('OCR Error:', error);
+                ocrProgress.style.display = 'none';
+                showStatus('OCR failed. Please enter values manually.', 'error');
+            }
+        }
+        
+        function extractNumbers(text) {
+            // Extract 1-2 digit numbers
+            const matches = text.match(/\b\d{1,2}\b/);
+            return matches ? matches[0] : '';
+        }
+        
+        function extractLetters(text) {
+            // Extract single letters A-L
+            const matches = text.match(/\b[A-L]\b/i);
+            return matches ? matches[0].toUpperCase() : '';
         }
         
         function setTestResult(result) {
@@ -334,10 +510,44 @@
             document.getElementById('testResult').value = result;
         }
         
+        function selectPosition(letter) {
+            // Clear previous selection
+            document.querySelectorAll('.position-btn').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            
+            // Select new position
+            const btn = document.querySelector(`[data-letter="${letter}"]`);
+            if (btn) {
+                btn.classList.add('selected');
+                selectedPosition = letter;
+                document.getElementById('selectedPosition').value = letter;
+            }
+        }
+        
+        function updateLetterButtons() {
+            const letters = document.getElementById('letterRange').value.toUpperCase();
+            availableLetters = letters;
+            
+            const container = document.getElementById('positionButtons');
+            container.innerHTML = '';
+            
+            for (let letter of letters) {
+                if (/[A-Z]/.test(letter)) {
+                    const btn = document.createElement('button');
+                    btn.className = 'position-btn';
+                    btn.textContent = letter;
+                    btn.setAttribute('data-letter', letter);
+                    btn.onclick = () => selectPosition(letter);
+                    container.appendChild(btn);
+                }
+            }
+        }
+        
         function addEntry() {
             const batch = document.getElementById('batchNumber').value;
             const board = document.getElementById('boardNumber').value;
-            const position = document.getElementById('position').value;
+            const position = selectedPosition;
             const testResult = currentTestResult;
             
             if (!batch || !board || !position || !testResult) {
@@ -390,9 +600,14 @@
         function clearForm() {
             document.getElementById('batchNumber').value = '';
             document.getElementById('boardNumber').value = '';
-            document.getElementById('position').value = '';
             document.getElementById('testResult').value = '';
             currentTestResult = '';
+            selectedPosition = '';
+            
+            // Clear position button selection
+            document.querySelectorAll('.position-btn').forEach(btn => {
+                btn.classList.remove('selected');
+            });
         }
         
         function exportCSV() {
@@ -419,7 +634,8 @@
             if (link.download !== undefined) {
                 const url = URL.createObjectURL(blob);
                 link.setAttribute('href', url);
-                link.setAttribute('download', `stone_data_${new Date().toISOString().split('T')[0]}.csv`);
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                link.setAttribute('download', `stone_data_${timestamp}.csv`);
                 link.style.visibility = 'hidden';
                 document.body.appendChild(link);
                 link.click();
