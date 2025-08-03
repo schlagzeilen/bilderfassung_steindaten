@@ -145,6 +145,11 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 10px;
+        }
+        
+        .result-item > div {
+            flex: 1;
         }
         
         .result-item:last-child {
@@ -155,9 +160,11 @@
             background: #dc3545;
             color: white;
             border: none;
-            padding: 4px 8px;
+            padding: 6px 12px;
             border-radius: 3px;
             font-size: 12px;
+            min-width: 50px;
+            flex-shrink: 0;
         }
         
         .status {
@@ -232,6 +239,31 @@
             text-align: center;
             display: none;
         }
+        
+        .full-width-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        
+        .config-btn {
+            width: 100%;
+            margin-top: 5px;
+            font-size: 14px;
+            padding: 10px;
+        }
+        
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .checkbox-container input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
     </style>
 </head>
 <body>
@@ -244,8 +276,7 @@
             <img id="capturedImage" alt="Captured block image">
             
             <div class="camera-controls">
-                <button id="startCamera">Start Camera</button>
-                <button id="captureBtn" disabled>Capture</button>
+                <button id="captureBtn">Capture</button>
                 <button id="retakeBtn" style="display: none;">Retake</button>
             </div>
         </div>
@@ -288,7 +319,7 @@
                 Analyzing image with OCR...
             </div>
             
-            <button onclick="addEntry()">Add Entry</button>
+            <button onclick="addEntry()" class="full-width-btn">Add Entry</button>
         </div>
         
         <div id="status" class="status" style="display: none;"></div>
@@ -298,29 +329,31 @@
         </div>
         
         <div class="export-section">
-            <button onclick="exportCSV()">Export CSV</button>
+            <button onclick="exportCSV()" class="full-width-btn">Export CSV</button>
         </div>
         
         <div class="config-section">
             <div class="config-title">Configuration</div>
             <div class="form-group">
-                <button id="accessCameraBtn" onclick="requestCameraAccess()" style="margin-bottom: 10px; font-size: 14px; padding: 8px;">Access Camera</button>
-                <button id="takeNewPhotoBtn" onclick="takeNewPhoto()" style="margin-bottom: 10px; font-size: 14px; padding: 8px; margin-left: 10px;" disabled>Take New Photo</button>
+                <div class="checkbox-container">
+                    <input type="checkbox" id="ocrEnabled" checked onchange="toggleCameraVisibility()">
+                    <label for="ocrEnabled">Enable OCR (automatic text detection)</label>
+                </div>
             </div>
             <div class="form-group">
                 <label for="letterRange">Available Letters (A-L default):</label>
                 <input type="text" id="letterRange" value="ABCDEFGHIJKL" placeholder="Enter available letters">
-                <button onclick="updateLetterButtons()" style="margin-top: 5px; font-size: 14px; padding: 8px;">Update Letters</button>
+                <button onclick="updateLetterButtons()" class="config-btn">Update Letters</button>
             </div>
             <div class="form-group">
                 <label for="batchRange">Available Batch Numbers (1-12 default):</label>
                 <input type="text" id="batchRange" value="1,2,3,4,5,6,7,8,9,10,11,12" placeholder="Enter available batch numbers">
-                <button onclick="updateBatchButtons()" style="margin-top: 5px; font-size: 14px; padding: 8px;">Update Batch Numbers</button>
+                <button onclick="updateBatchButtons()" class="config-btn">Update Batch Numbers</button>
             </div>
             <div class="form-group">
                 <label for="boardRange">Available Board Numbers (1-12 default):</label>
                 <input type="text" id="boardRange" value="1,2,3,4,5,6,7,8,9,10,11,12" placeholder="Enter available board numbers">
-                <button onclick="updateBoardButtons()" style="margin-top: 5px; font-size: 14px; padding: 8px;">Update Board Numbers</button>
+                <button onclick="updateBoardButtons()" class="config-btn">Update Board Numbers</button>
             </div>
         </div>
     </div>
@@ -335,34 +368,27 @@
         let availableBoards = '1,2,3,4,5,6,7,8,9,10,11,12';
         let selectedBatch = '';
         let selectedBoard = '';
-        let cameraAccessGranted = false;
         
         const video = document.getElementById('video');
         const capturedImage = document.getElementById('capturedImage');
-        const startCameraBtn = document.getElementById('startCamera');
         const captureBtn = document.getElementById('captureBtn');
         const retakeBtn = document.getElementById('retakeBtn');
         const statusDiv = document.getElementById('status');
         const resultsList = document.getElementById('resultsList');
         const ocrProgress = document.getElementById('ocrProgress');
         
-        // Initialize buttons on page load
+        // Initialize buttons and auto-start camera on page load
         document.addEventListener('DOMContentLoaded', function() {
             updateLetterButtons();
             updateBatchButtons();
             updateBoardButtons();
+            autoStartCamera();
         });
         
-        startCameraBtn.addEventListener('click', startCamera);
         captureBtn.addEventListener('click', captureImage);
         retakeBtn.addEventListener('click', retakePhoto);
         
-        async function startCamera() {
-            if (!cameraAccessGranted) {
-                showStatus('Please grant camera access first using the button in Configuration', 'error');
-                return;
-            }
-            
+        async function autoStartCamera() {
             try {
                 const constraints = {
                     video: {
@@ -375,13 +401,41 @@
                 stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
                 
-                startCameraBtn.disabled = true;
-                captureBtn.disabled = false;
-                
                 showStatus('Camera started successfully', 'success');
             } catch (error) {
                 console.error('Error accessing camera:', error);
+                showStatus('Error accessing camera: ' + error.message + '. Please allow camera access and refresh the page.', 'error');
+            }
+        }
+        
+        async function startCamera() {
+            try {
+                const constraints = {
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                };
+                
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                
+                showStatus('Camera restarted for next photo', 'success');
+            } catch (error) {
+                console.error('Error accessing camera:', error);
                 showStatus('Error accessing camera: ' + error.message, 'error');
+            }
+        }
+        
+        function restartCameraView() {
+            // Don't request new permissions - just reuse existing stream
+            if (stream && stream.active) {
+                video.srcObject = stream;
+                showStatus('Ready for next photo', 'success');
+            } else {
+                // If stream is lost, request new one
+                startCamera();
             }
         }
         
@@ -403,11 +457,12 @@
             captureBtn.style.display = 'none';
             retakeBtn.style.display = 'block';
             
-            stopCamera();
-            
-            analyzeImage(imageDataUrl);
-            
-            showStatus('Image captured successfully', 'success');
+            // Only run OCR if enabled
+            if (document.getElementById('ocrEnabled').checked) {
+                analyzeImage(imageDataUrl);
+            } else {
+                showStatus('Image captured successfully - OCR disabled', 'success');
+            }
         }
         
         function retakePhoto() {
@@ -416,8 +471,8 @@
             
             retakeBtn.style.display = 'none';
             
-            clearForm();
-            startCamera();
+            clearFormKeepNumbers();
+            restartCameraView();
         }
         
         function stopCamera() {
@@ -425,8 +480,6 @@
                 stream.getTracks().forEach(track => track.stop());
                 stream = null;
             }
-            startCameraBtn.disabled = false;
-            captureBtn.disabled = true;
         }
         
         async function analyzeImage(imageDataUrl) {
@@ -550,8 +603,8 @@
         }
         
         function selectPosition(letter) {
-            // Clear previous selection
-            document.querySelectorAll('.position-btn').forEach(btn => {
+            // Clear previous selection (only position buttons)
+            document.querySelectorAll('#positionButtons .position-btn').forEach(btn => {
                 btn.classList.remove('selected');
             });
             
@@ -677,7 +730,14 @@
             updateResultsList();
             clearForm();
             
-            showStatus('Entry added successfully', 'success');
+            // Auto-prepare for next photo
+            capturedImage.style.display = 'none';
+            video.style.display = 'block';
+            retakeBtn.style.display = 'none';
+            captureBtn.style.display = 'block';
+            restartCameraView();
+            
+            showStatus('Entry added successfully - Ready for next photo', 'success');
         }
         
         function updateResultsList() {
@@ -689,13 +749,9 @@
             resultsList.innerHTML = entries.map(entry => `
                 <div class="result-item">
                     <div>
-                        <strong>Batch:</strong> ${entry.batch}, 
-                        <strong>Board:</strong> ${entry.board}, 
-                        <strong>Pos:</strong> ${entry.position}, 
-                        <strong>Test:</strong> ${entry.testResult}
-                        <br><small>${entry.timestamp}</small>
+                        <strong>B:</strong> ${entry.batch}, <strong>Bd:</strong> ${entry.board}, <strong>P:</strong> ${entry.position}, <strong>T:</strong> ${entry.testResult}
                     </div>
-                    <button class="delete-btn" onclick="deleteEntry(${entry.id})">Delete</button>
+                    <button class="delete-btn" onclick="deleteEntry(${entry.id})">Del</button>
                 </div>
             `).join('');
         }
@@ -715,6 +771,18 @@
             
             // Clear all button selections
             document.querySelectorAll('.position-btn').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+        }
+        
+        function clearFormKeepNumbers() {
+            // Only clear test result and position, keep batch/board selections
+            document.getElementById('testResult').value = '';
+            currentTestResult = '';
+            selectedPosition = '';
+            
+            // Only clear position letter buttons
+            document.querySelectorAll('#positionButtons .position-btn').forEach(btn => {
                 btn.classList.remove('selected');
             });
         }
@@ -766,50 +834,22 @@
             }, 3000);
         }
         
-        async function requestCameraAccess() {
-            if (cameraAccessGranted) {
-                showStatus('Camera access already granted', 'success');
-                return;
-            }
+
+        function toggleCameraVisibility() {
+            const cameraSection = document.querySelector('.camera-section');
+            const ocrEnabled = document.getElementById('ocrEnabled').checked;
             
-            try {
-                const constraints = {
-                    video: {
-                        facingMode: 'environment',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    }
-                };
-                
-                const testStream = await navigator.mediaDevices.getUserMedia(constraints);
-                testStream.getTracks().forEach(track => track.stop());
-                
-                cameraAccessGranted = true;
-                document.getElementById('accessCameraBtn').disabled = true;
-                document.getElementById('takeNewPhotoBtn').disabled = false;
-                document.getElementById('startCamera').disabled = false;
-                
-                showStatus('Camera access granted successfully', 'success');
-            } catch (error) {
-                console.error('Error requesting camera access:', error);
-                showStatus('Error requesting camera access: ' + error.message, 'error');
+            if (ocrEnabled) {
+                cameraSection.style.display = 'block';
+                // Restart camera if it was disabled
+                if (!stream || !stream.active) {
+                    autoStartCamera();
+                }
+            } else {
+                cameraSection.style.display = 'none';
+                // Stop camera to save resources
+                stopCamera();
             }
-        }
-        
-        function takeNewPhoto() {
-            if (!cameraAccessGranted) {
-                showStatus('Please grant camera access first', 'error');
-                return;
-            }
-            
-            // Reset camera state
-            capturedImage.style.display = 'none';
-            video.style.display = 'block';
-            retakeBtn.style.display = 'none';
-            captureBtn.style.display = 'block';
-            
-            clearForm();
-            startCamera();
         }
 
         window.addEventListener('beforeunload', () => {
