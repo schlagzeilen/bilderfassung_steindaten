@@ -27,11 +27,6 @@
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         
-        h1 {
-            text-align: center;
-            margin-bottom: 20px;
-            color: #333;
-        }
         
         .camera-section {
             margin-bottom: 20px;
@@ -268,7 +263,6 @@
 </head>
 <body>
     <div class="container">
-        <h1>Stone Data Capture</h1>
         
         
         <div class="camera-section">
@@ -336,7 +330,7 @@
             <div class="config-title">Configuration</div>
             <div class="form-group">
                 <div class="checkbox-container">
-                    <input type="checkbox" id="ocrEnabled" checked onchange="toggleCameraVisibility()">
+                    <input type="checkbox" id="ocrEnabled" onchange="toggleCameraVisibility()">
                     <label for="ocrEnabled">Enable OCR (automatic text detection)</label>
                 </div>
             </div>
@@ -354,6 +348,9 @@
                 <label for="boardRange">Available Board Numbers (1-12 default):</label>
                 <input type="text" id="boardRange" value="1,2,3,4,5,6,7,8,9,10,11,12" placeholder="Enter available board numbers">
                 <button onclick="updateBoardButtons()" class="config-btn">Update Board Numbers</button>
+            </div>
+            <div class="form-group">
+                <button onclick="clearAllData()" class="config-btn" style="background: #dc3545; color: white;">Clear All Saved Data</button>
             </div>
         </div>
     </div>
@@ -377,12 +374,19 @@
         const resultsList = document.getElementById('resultsList');
         const ocrProgress = document.getElementById('ocrProgress');
         
-        // Initialize buttons and auto-start camera on page load
+        // Initialize buttons and setup on page load
         document.addEventListener('DOMContentLoaded', function() {
             updateLetterButtons();
             updateBatchButtons();
             updateBoardButtons();
-            autoStartCamera();
+            loadSavedData();
+            
+            // Only start camera if OCR is enabled
+            if (document.getElementById('ocrEnabled').checked) {
+                autoStartCamera();
+            } else {
+                toggleCameraVisibility();
+            }
         });
         
         captureBtn.addEventListener('click', captureImage);
@@ -728,6 +732,7 @@
             
             entries.push(entry);
             updateResultsList();
+            saveDataToStorage();
             clearForm();
             
             // Auto-prepare for next photo
@@ -759,6 +764,7 @@
         function deleteEntry(id) {
             entries = entries.filter(entry => entry.id !== id);
             updateResultsList();
+            saveDataToStorage();
             showStatus('Entry deleted', 'success');
         }
         
@@ -849,6 +855,89 @@
                 cameraSection.style.display = 'none';
                 // Stop camera to save resources
                 stopCamera();
+            }
+        }
+
+        // Data persistence functions
+        function saveDataToStorage() {
+            const data = {
+                entries: entries,
+                selectedBatch: selectedBatch,
+                selectedBoard: selectedBoard,
+                availableLetters: availableLetters,
+                availableBatches: availableBatches,
+                availableBoards: availableBoards,
+                timestamp: new Date().toISOString()
+            };
+            localStorage.setItem('stoneDataApp', JSON.stringify(data));
+        }
+        
+        function loadSavedData() {
+            const saved = localStorage.getItem('stoneDataApp');
+            if (saved) {
+                try {
+                    const data = JSON.parse(saved);
+                    const savedTime = new Date(data.timestamp);
+                    const now = new Date();
+                    const hoursDiff = (now - savedTime) / (1000 * 60 * 60);
+                    
+                    // Only prompt if data is less than 24 hours old
+                    if (hoursDiff < 24 && data.entries && data.entries.length > 0) {
+                        const restore = confirm(
+                            `Found ${data.entries.length} saved entries from ${savedTime.toLocaleDateString()} ${savedTime.toLocaleTimeString()}. ` +
+                            'Would you like to restore your previous session?'
+                        );
+                        
+                        if (restore) {
+                            entries = data.entries || [];
+                            selectedBatch = data.selectedBatch || '';
+                            selectedBoard = data.selectedBoard || '';
+                            
+                            // Restore configuration if saved
+                            if (data.availableLetters) {
+                                availableLetters = data.availableLetters;
+                                document.getElementById('letterRange').value = data.availableLetters;
+                            }
+                            if (data.availableBatches) {
+                                availableBatches = data.availableBatches;
+                                document.getElementById('batchRange').value = data.availableBatches;
+                            }
+                            if (data.availableBoards) {
+                                availableBoards = data.availableBoards;
+                                document.getElementById('boardRange').value = data.availableBoards;
+                            }
+                            
+                            // Update UI to reflect restored data
+                            updateResultsList();
+                            
+                            // Restore selected batch/board after buttons are created
+                            setTimeout(() => {
+                                if (selectedBatch) selectBatch(selectedBatch);
+                                if (selectedBoard) selectBoard(selectedBoard);
+                            }, 100);
+                            
+                            showStatus('Session restored successfully', 'success');
+                        } else {
+                            clearStoredData();
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error loading saved data:', error);
+                    clearStoredData();
+                }
+            }
+        }
+        
+        function clearStoredData() {
+            localStorage.removeItem('stoneDataApp');
+        }
+        
+        function clearAllData() {
+            if (confirm('Are you sure you want to clear all saved data? This will remove all entries and cannot be undone.')) {
+                entries = [];
+                updateResultsList();
+                clearStoredData();
+                showStatus('All data cleared successfully', 'success');
             }
         }
 
